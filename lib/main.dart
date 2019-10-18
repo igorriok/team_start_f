@@ -8,6 +8,10 @@ void main() => runApp(new MyApp());
 
 class MyApp extends StatelessWidget {
   // This widget is the root of your application.
+
+  //TODO: get and display the list of events
+  //TODO: Create page with event details
+
   @override
   Widget build(BuildContext context) {
     return new MaterialApp(

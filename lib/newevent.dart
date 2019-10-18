@@ -2,8 +2,14 @@ import 'package:contacts_service/contacts_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:datetime_picker_formfield/datetime_picker_formfield.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 
 class NewEventPage extends StatelessWidget {
+
+  //TODO: Create a JSON
+  //TODO: Send JSON to DB
+  //TODO: Close this page
+
   @override
   Widget build(BuildContext context) {
     final appTitle = 'Form Validation Demo';
@@ -25,38 +31,33 @@ class NewEventPage extends StatelessWidget {
 
 class NewEventForm extends StatefulWidget {
   @override
-  _NewEventState createState() {
-    return _NewEventState();
-  }
+  _NewEventState createState() => _NewEventState();
 }
 
 class _NewEventState extends State<NewEventForm> {
   final _formKey = GlobalKey<FormState>();
-  final List<String> entries = <String>['A', 'B', 'C'];
+  int entries = 1;
   Iterable<Contact> _contacts;
 
-  final formats = {
-    InputType.both: DateFormat("EEEE, MMMM d, yyyy 'at' h:mma"),
-    InputType.date: DateFormat('yyyy-MM-dd'),
-    InputType.time: DateFormat("HH:mm"),
-  };
+  final format = DateFormat("yyyy-MM-dd HH:mm");
 
-  // Changeable in demo
-  InputType inputType = InputType.both;
-  bool editable = true;
-  DateTime date;
-
-  @override
-  initState() {
-    super.initState();
-    refreshContacts();
+  Future<List<String>> getContacts(pattern) async {
+    Iterable<Contact> cont = await ContactsService.getContacts(query : pattern);
+    //print("Contact: " + cont.toString());
+    return cont.expand((contact) => contact.emails.map((email) => email.value)).toList();
   }
 
-  refreshContacts() async {
-    var contacts = await ContactsService.getContacts();
-//      var contacts = await ContactsService.getContactsForPhone("8554964652");
+  void _addField() {
     setState(() {
-      _contacts = contacts;
+      entries++;
+    });
+  }
+
+  Map<int, String> guestList = Map<int, String>();
+
+  void _addGuest(int key, String email) {
+    setState(() {
+      guestList.putIfAbsent(key, () => email);
     });
   }
 
@@ -69,7 +70,6 @@ class _NewEventState extends State<NewEventForm> {
         child: ListView(
           children: <Widget>[
             TextFormField(
-              obscureText: true,
               decoration: InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'Event name',
@@ -81,32 +81,47 @@ class _NewEventState extends State<NewEventForm> {
                 return null;
               },
             ),
-            DateTimePickerFormField(
-              inputType: inputType,
-              format: formats[inputType],
-              editable: editable,
+            DateTimeField(
+              format: format,
               decoration: InputDecoration(
-                  labelText: 'Date/Time', hasFloatingPlaceholder: false),
-              onChanged: (dt) => setState(() => date = dt),
+                border: OutlineInputBorder(),
+                labelText: 'Event time',
+              ),
+              onShowPicker: (context, currentValue) async {
+                final date = await showDatePicker(
+                    context: context,
+                    firstDate: DateTime(1900),
+                    initialDate: currentValue ?? DateTime.now(),
+                    lastDate: DateTime(2100));
+                if (date != null) {
+                  final time = await showTimePicker(
+                    context: context,
+                    initialTime:
+                    TimeOfDay.fromDateTime(currentValue ?? DateTime.now()),
+                  );
+                  return DateTimeField.combine(date, time);
+                } else {
+                  return currentValue;
+                }
+              },
             ),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: ListView.builder(
                 shrinkWrap: true,
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
-                itemCount: entries.length,
-                itemBuilder: (BuildContext context, int index) {
-                  return Container(
-                    height: 50,
-                    child: participantCard(entries[index]),
-                  );
+                itemCount: entries,
+                itemBuilder: (context, int index) {
+                  return ParticipantField(index: index, addGuest: (guest) {
+                    guestList.putIfAbsent(index, () => guest);
+                    print(guestList);
+                  });
                 },
               ),
             ),
             FloatingActionButton.extended(
               onPressed: () {
-                _displayDialog(context);
-                //TODO: Add function to add participants to list
+                _addField();
               },
               label: Text('Add participants'),
               tooltip: 'Add participants to event',
@@ -119,6 +134,7 @@ class _NewEventState extends State<NewEventForm> {
                   // the form is invalid.
                   if (_formKey.currentState.validate()) {
                     // Process data.
+                    this._formKey.currentState.save();
                   }
                 },
                 child: Text('Submit'),
@@ -130,52 +146,63 @@ class _NewEventState extends State<NewEventForm> {
     );
   }
 
-  Widget participantCard(String name) {
-    return Card(child: ListTile(title: Text(name)));
-  }
-
-  _displayDialog(BuildContext context) async {
-    return showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: Text('ListView in Dialog'),
-            content: Container(
-              width: double.maxFinite,
-              height: 300.0,
-              child: ListView(
-                padding: EdgeInsets.all(8.0),
-                //map List of our data to the ListView
-                children:
-                    _contacts.map((data) => Text(data.initials())).toList(),
-              ),
-            ),
-            actions: <Widget>[
-              new FlatButton(
-                child: new Text('CANCEL'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              )
-            ],
-          );
-        });
-  }
-
 }
 
-/*class ContactsDialog extends StatefulWidget {
+class ParticipantField extends StatefulWidget {
+
+  ParticipantField({Key key, @required this.index, @required this.addGuest}) : super(key: key);
+
+  final int index;
+  final ValueChanged<String> addGuest;
+
   @override
-  _ContactsDialogState createState() {
-    return _ContactsDialogState();
-  }
+  _ParticipantFieldState createState() => _ParticipantFieldState();
 }
 
-class _ContactsDialogState extends State<NewEventForm> {
+class _ParticipantFieldState extends State<ParticipantField> {
+
+  Future<List<String>> getContacts(pattern) async {
+    Iterable<Contact> cont = await ContactsService.getContacts(query : pattern);
+    //print("Contact: " + cont.toString());
+    return cont.expand((contact) => contact.emails.map((email) => email.value)).toList();
+  }
+
+  final TextEditingController _typeAheadController = TextEditingController();
+
+  void _handleSave(String value) {
+    widget.addGuest(value);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return
+    return Container(
+      height: 50,
+      child: TypeAheadFormField(
+        textFieldConfiguration: TextFieldConfiguration(
+            controller: _typeAheadController,
+            decoration: InputDecoration(
+              labelText: "Participant: " + (widget.index+1).toString(),
+            )
+        ),
+        suggestionsCallback: (pattern) async {
+          print("sugetion");
+          return await getContacts(pattern);
+        },
+        itemBuilder: (context, suggestion) {
+          return ListTile(
+            title: Text(suggestion),
+          );
+        },
+        transitionBuilder: (context, suggestionsBox, controller) {
+          return suggestionsBox;
+        },
+        onSuggestionSelected: (suggestion) {
+          this._typeAheadController.text = suggestion;
+        },
+        // TODO: Check how to save the form (how to trigger this callback)
+        onSaved: (value) => this._handleSave(value),
+      ),
+    );
   }
+}
 
-}*/
