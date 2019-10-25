@@ -2,10 +2,11 @@ import 'package:contacts_service/contacts_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:datetime_picker_formfield/datetime_picker_formfield.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:autocomplete_textfield/autocomplete_textfield.dart';
 
 class NewEventPage extends StatelessWidget {
 
+  //TODO: Change the root widget to listview
   //TODO: Create a JSON
   //TODO: Send JSON to DB
   //TODO: Close this page
@@ -35,17 +36,34 @@ class NewEventForm extends StatefulWidget {
 }
 
 class _NewEventState extends State<NewEventForm> {
-  final _formKey = GlobalKey<FormState>();
-  int entries = 1;
-  Iterable<Contact> _contacts;
 
+  Iterable<Contact> contacts;
+  final formKey = GlobalKey<FormState>();
   final format = DateFormat("yyyy-MM-dd HH:mm");
 
-  Future<List<String>> getContacts(pattern) async {
-    Iterable<Contact> cont = await ContactsService.getContacts(query : pattern);
-    //print("Contact: " + cont.toString());
-    return cont.expand((contact) => contact.emails.map((email) => email.value)).toList();
+  /*@override
+  void initState() {
+    super.initState();
+    getContacts().then((value){
+      contacts = value;
+      print('Loaded ' + value.length.toString() + ' contacts');
+    });
+  }*/
+
+  Future<Iterable<Contact>> getContacts() async {
+    Iterable<Contact> contacts = await ContactsService.getContacts(withThumbnails: false);
+    //print("Contact: " + cont.length.toString());
+    return contacts;
   }
+
+  Future<List<String>> getEmails(text) async {
+    //TODO: Iterate Contacts names and find which match the pattern
+    //TODO: Return only emails of this contacts
+    return contacts.where((contact) => contact.givenName.contains(text) | contact.familyName.contains(text))
+        .expand((contact) => contact.emails.map((email) => email.value)).toList();
+  }
+
+  int entries = 1;
 
   void _addField() {
     setState(() {
@@ -55,18 +73,12 @@ class _NewEventState extends State<NewEventForm> {
 
   Map<int, String> guestList = Map<int, String>();
 
-  void _addGuest(int key, String email) {
-    setState(() {
-      guestList.putIfAbsent(key, () => email);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(32),
       child: Form(
-        key: _formKey,
+        key: formKey,
         child: ListView(
           children: <Widget>[
             TextFormField(
@@ -90,7 +102,7 @@ class _NewEventState extends State<NewEventForm> {
               onShowPicker: (context, currentValue) async {
                 final date = await showDatePicker(
                     context: context,
-                    firstDate: DateTime(1900),
+                    firstDate: DateTime(2019),
                     initialDate: currentValue ?? DateTime.now(),
                     lastDate: DateTime(2100));
                 if (date != null) {
@@ -112,7 +124,7 @@ class _NewEventState extends State<NewEventForm> {
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
                 itemCount: entries,
                 itemBuilder: (context, int index) {
-                  return ParticipantField(index: index, addGuest: (guest) {
+                  return ParticipantField(index: index, /*contacts: contacts,*/ addGuest: (guest) {
                     guestList.putIfAbsent(index, () => guest);
                     print(guestList);
                   });
@@ -132,9 +144,9 @@ class _NewEventState extends State<NewEventForm> {
                 onPressed: () {
                   // Validate will return true if the form is valid, or false if
                   // the form is invalid.
-                  if (_formKey.currentState.validate()) {
+                  if (formKey.currentState.validate()) {
                     // Process data.
-                    this._formKey.currentState.save();
+                    this.formKey.currentState.save();
                   }
                 },
                 child: Text('Submit'),
@@ -150,10 +162,12 @@ class _NewEventState extends State<NewEventForm> {
 
 class ParticipantField extends StatefulWidget {
 
-  ParticipantField({Key key, @required this.index, @required this.addGuest}) : super(key: key);
+  ParticipantField({Key key, @required this.index, /*@required this.contacts,*/
+    @required this.addGuest}) : super(key: key);
 
   final int index;
   final ValueChanged<String> addGuest;
+  /*final Iterable<Contact> contacts;*/
 
   @override
   _ParticipantFieldState createState() => _ParticipantFieldState();
@@ -161,13 +175,28 @@ class ParticipantField extends StatefulWidget {
 
 class _ParticipantFieldState extends State<ParticipantField> {
 
-  Future<List<String>> getContacts(pattern) async {
-    Iterable<Contact> cont = await ContactsService.getContacts(query : pattern);
-    //print("Contact: " + cont.toString());
-    return cont.expand((contact) => contact.emails.map((email) => email.value)).toList();
+  Iterable<Contact> contacts;
+  GlobalKey key = new GlobalKey<AutoCompleteTextFieldState<Contact>>();
+
+  _ParticipantFieldState() {
+    getContacts().then((val) => setState(() {
+      contacts = val;
+    }));
   }
 
-  final TextEditingController _typeAheadController = TextEditingController();
+  Future<List<Contact>> getContacts() async {
+    Iterable<Contact> contacts = await ContactsService.getContacts(withThumbnails: false);
+    print("Contact: " + contacts.toList().length.toString());
+    return contacts.toList();
+  }
+
+  /*
+  Future<List<String>> getEmails(text) async {
+    //TODO: Iterate Contacts names and find which match the pattern
+    //TODO: Return only emails of this contacts
+    return widget.contacts.where((contact) => contact.givenName.contains(text) | contact.familyName.contains(text))
+        .expand((contact) => contact.emails.map((email) => email.value)).toList();
+  }*/
 
   void _handleSave(String value) {
     widget.addGuest(value);
@@ -177,30 +206,32 @@ class _ParticipantFieldState extends State<ParticipantField> {
   Widget build(BuildContext context) {
     return Container(
       height: 50,
-      child: TypeAheadFormField(
-        textFieldConfiguration: TextFieldConfiguration(
-            controller: _typeAheadController,
-            decoration: InputDecoration(
-              labelText: "Participant: " + (widget.index+1).toString(),
-            )
+      child: AutoCompleteTextField<Contact>(
+        key: key,
+        clearOnSubmit: false,
+        suggestions: contacts,
+        style: TextStyle(color: Colors.black, fontSize: 16.0),
+        decoration: InputDecoration(
+          contentPadding: EdgeInsets.fromLTRB(10.0, 30.0, 10.0, 20.0),
+          hintText: "Search Name",
+          hintStyle: TextStyle(color: Colors.black),
         ),
-        suggestionsCallback: (pattern) async {
-          print("sugetion");
-          return await getContacts(pattern);
+        itemFilter: (item, query) {
+          return item.familyName
+              .toLowerCase()
+              .startsWith(query.toLowerCase());
+        },
+        itemSorter: (a, b) {
+          return a.givenName.compareTo(b.givenName);
+        },
+        itemSubmitted: (item) {
+          _handleSave(item.givenName);
         },
         itemBuilder: (context, suggestion) {
           return ListTile(
-            title: Text(suggestion),
+              title: new Text(suggestion.givenName),
           );
-        },
-        transitionBuilder: (context, suggestionsBox, controller) {
-          return suggestionsBox;
-        },
-        onSuggestionSelected: (suggestion) {
-          this._typeAheadController.text = suggestion;
-        },
-        // TODO: Check how to save the form (how to trigger this callback)
-        onSaved: (value) => this._handleSave(value),
+        }
       ),
     );
   }

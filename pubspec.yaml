@@ -11,9 +11,9 @@ dependencies:
 
   intl: ^0.15.8
   datetime_picker_formfield: ^0.4.3
-  contacts_service: ^0.3.4
-  permission_handler: ^3.1.0
-  flutter_typeahead: ^1.6.1
+  contacts_service: ^0.3.5
+  permission_handler: ^3.3.0
+  autocomplete_textfield: ^1.7.3
 
 dev_dependencies:
   flutter_test:
